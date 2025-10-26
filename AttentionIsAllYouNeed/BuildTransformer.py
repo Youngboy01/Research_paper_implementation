@@ -8,7 +8,7 @@ from MHSA import MultiHeadAttention
 from Transformer import Transformer
 from FFN import FFN
 def build_transformer(src_vocab_size: int, tgt_vocab_size: int, src_seq_len: int, tgt_seq_len: int, d_model: int = 512, N: int = 6, heads: int = 8, dropout: float = 0.1, d_ffn: int = 2048) -> Transformer:
-     #Create embedding layers
+    #Create embedding layers
     src_embed = InputEmbeddings(d_model, src_vocab_size)
     target_embed = InputEmbeddings(d_model, tgt_vocab_size)
     #create positional encoding layers
