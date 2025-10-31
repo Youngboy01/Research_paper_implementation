@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
+from typing import Optional,Tuple
 class SigLipVisionConfig:
     """Referred from https://github.com/huggingface/transformers/blob/main/src/transformers/models/siglip/configuration_siglip.py"""
 
@@ -124,4 +125,55 @@ class SigLipMLP(nn.Module):
         hidden_states = F.gelu(hidden_states,approximate="tanh")
         hidden_states = self.linearlayer2(hidden_states)
         return hidden_states
+class SigLipAttention(nn.Module):#will not contain causal masking as vision doesn't need to be autoregressive
+    def __init__(self, config: SigLipVisionConfig):
+        super().__init__()
+        self.config = config
+        self.num_heads = config.num_attention_heads
+        self.embed_dim=config.hidden_size
+        self.head_dim = self.embed_dim//self.num_heads
+        self.scale = self.head_dim**-0.5
+        self.dropout = config.attention_dropout#though we wont be using it
         
+        self.W_q = nn.Linear(self.embed_dim,self.embed_dim)
+        self.W_v = nn.Linear(self.embed_dim,self.embed_dim)
+        self.W_k = nn.Linear(self.embed_dim,self.embed_dim)
+        self.W_o = nn.Linear(self.embed_dim,self.embed_dim)
+    def forward(self,hidden_states: torch.Tensor)->Tuple[torch.Tensor,Optional[torch.Tensor]]:
+        #hidden_states = [batch_size,num_patches,embed_dim]
+        batch_size,seq_len,_ = hidden_states.size()
+        #key = [batch_size,num_patches,embed_dim]
+        key = self.W_k(hidden_states)
+        #query = [batch_size,num_patches,embed_dim]
+        query = self.W_q(hidden_states)
+        #value = [batch_size,num_patches,embed_dim]
+        value = self.W_v(hidden_states)
+        #embed_dim = head_dim*num_heads
+        #query/key/value = [batch_size,num_patches,num_heads,head_dim]->[batch_size,num_heads,num_patches,head_dim]
+        query = query.view(batch_size,seq_len,self.num_heads,self.head_dim).transpose(1,2)
+        key = key.view(batch_size,seq_len,self.num_heads,self.head_dim).transpose(1,2)
+        value = value.view(batch_size,seq_len,self.num_heads,self.head_dim).transpose(1,2)
+        #now calculate attention weights using the formula. attention_weights = [batch_size,num_heads,num_patches,num_patches]
+        attn_weights = (torch.matmul(query,key.transpose(2,3))*self.scale)
+        if attn_weights.size() != (batch_size, self.num_heads, seq_len, seq_len):
+            raise ValueError(
+                f"Attention weights should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is"
+                f" {attn_weights.size()}"
+            )
+        #applying softmax rowise
+        attn_weights = F.softmax(attn_weights,dim=-1,dtype=torch.float32).to(query.dtype)
+        #dropout exists but is never used in the params of paligemma so not writing it
+        #now multiply attn_weight with the value sequence
+        attn_output = torch.matmul(attn_weights,value)
+        if attn_output.size() != (batch_size, self.num_heads, seq_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(batch_size, self.num_heads, seq_len, self.head_dim)}, but is"
+                f" {attn_output.size()}"
+            )
+        #[Batch_size,num_heads,num_patches,head_dim]->[Batch_size,num_patches,num_heads,head_dim]
+        attn_output = attn_output.transpose(1,2).contiguous()
+        #multpily back the last two dims [Batch_size,num_patches,num_heads,head_dim]->[Batch_size,num_patches,embed_dim]
+        attn_output = attn_output.reshape(batch_size,seq_len,self.embed_dim)
+        attn_output = self.W_o(attn_output)
+        return attn_output,attn_weights
+    
