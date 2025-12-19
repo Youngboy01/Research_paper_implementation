@@ -1,5 +1,5 @@
 # PaliGemma processor creates text-tokens with placeholders for vision tokens
-from typing import Optional, Union, List, Dict, Tuple, Iterable
+from typing import Optional, Union, Dict,List, Tuple, Iterable
 import numpy as np
 from PIL import Image
 import torch
@@ -13,7 +13,6 @@ def normalize(
     mean: Union[float, Iterable[float]],
     std: Union[float, Iterable[float]],
 ) -> np.ndarray:
-    image = image.astype(np.float32)
     mean = np.array(mean, dtype=image.dtype)
     std = np.array(std, dtype=image.dtype)
     image = (image - mean) / std
@@ -21,19 +20,19 @@ def normalize(
 
 
 def rescale(
-    image: np.ndarray, scale: float, dtype: np.dtype = np.dtype(np.float32)
+    image: np.ndarray, scale: float, dtype: np.dtype = np.float32
 ) -> np.ndarray:
     rescaled_image = image * scale
     rescaled_image = rescaled_image.astype(dtype)
     return rescaled_image
 
 
-def resize(
-    image: Image.Image,
+def resize_image(
+    image: Image,
     size: Tuple[int, int],
-    resample: Optional[Image.Resampling] = None,
+    resample:Image.Resampling = None,
     reducing_gap: Optional[int] = None,
-) -> Image.Image:
+) -> np.ndarray:
     height, width = size
     resized_img = image.resize(
         (width, height), resample=resample, reducing_gap=reducing_gap
@@ -43,27 +42,24 @@ def resize(
 
 def process_image(
     images: List[Image.Image],
-    size: Optional[Tuple[int, int]] = None,
-    resample: Optional[Image.Resampling] = None,
-    rescale_factor: Optional[float] = None,
+    size: Dict[str,int] = None,
+    resample: Image.Resampling = None,
+    rescale_factor: float = None,
     image_mean: Optional[Union[float, List[float]]] = None,
     image_std: Optional[Union[float, List[float]]] = None,
 ) -> List[np.ndarray]:
-    if size is None:
-        raise ValueError("size must be provided as a tuple (height, width)")
     height, width = size[0], size[1]
     images = [
-        resize(image=image, size=(height, width), resample=resample) for image in images
+        resize_image(image=image, size=(height, width), resample=resample) for image in images
     ]
     images = [
         np.array(image) for image in images
     ]  # converts each image to numpoy array
-    if rescale_factor is not None:
-        images = [
+    
+    images = [
             rescale(image, scale=rescale_factor) for image in images
         ]  # rescales pixel values between [0,1]
-    if image_mean is not None and image_std is not None:
-        images = [
+    images = [
             normalize(image, mean=image_mean, std=image_std) for image in images
         ]  # normalizing images to have mean 0 and std 1
     # Move the channel dimension to the first dimension. The model expects images in the format [Channel, Height, Width]
@@ -107,14 +103,13 @@ class ProcessorPaliGemma:
         padding: str = "longest",
         truncation: bool = True,
     ) -> dict:
-        assert len(images) == 1 and len(text) == 1, (
-            f"received {len(images)} images for {len(text)} prompts"
-        )
+        assert len(images) == 1 and len(text) == 1,f"received {len(images)} images for {len(text)} prompts"
+        
         pixel_values = process_image(
             images,
             size=(self.image_size, self.image_size),
             resample=Image.Resampling.BICUBIC,
-            rescale_factor=1 / 255,
+            rescale_factor=1 / 255.0,
             image_mean=IMAGENET_STANDARD_MEAN,
             image_std=IMAGENET_STANDARD_STD,
         )  # it is returnig a list of numpy arrays

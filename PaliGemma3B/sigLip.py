@@ -18,10 +18,10 @@ class SiglipVisionConfig:
         patch_size=16,
         layer_norm_eps=1e-6,
         attention_dropout=0.0,
-        num_image_tokens: Optional[int] = None,#how many image embeddings will be there for each image
+        num_image_tokens: int= None,#how many image embeddings will be there for each image
         **kwargs,
     ):
-        super().__init__(**kwargs)
+        super().__init__()
         self.hidden_size = hidden_size
         self.intermediate_size = intermediate_size
         self.num_hidden_layers = num_hidden_layers
@@ -40,7 +40,7 @@ class SiglipVisionModel(nn.Module):
         self.config = config
         self.vision_model = SiglipVisionTransformer(config)
 
-    def forward(self, pixel_values) -> tuple:
+    def forward(self, pixel_values) -> Tuple:
         # [batch,3,h,w]->[batch,num_patches,embed_dim]#batch of list of embeddings for each image
         return self.vision_model(pixel_values=pixel_values)
 
@@ -57,7 +57,7 @@ class SiglipVisionTransformer(nn.Module):
             normalized_shape=self.embed_dim, eps=config.layer_norm_eps
         )
 
-    def forward(self, pixel_values: torch.Tensor):
+    def forward(self, pixel_values: torch.Tensor)->torch.Tensor:
         embeddings = self.vision_embeddings(pixel_values)
         # pass through encoder
         encoder_output = self.encoder(embeddings)
@@ -112,7 +112,7 @@ class SiglipEncoder(nn.Module):
             [SiglipEncoderLayer(config=config) for _ in range(config.num_hidden_layers)]
         )
 
-    def forward(self, input_embeds: torch.Tensor):
+    def forward(self, input_embeds: torch.Tensor)->torch.Tensor:
         hidden_states = input_embeds
         for encoder_layer in self.layers:
             hidden_states = encoder_layer(hidden_states)
@@ -134,7 +134,7 @@ class SiglipEncoderLayer(nn.Module):
         # layernorm
         hidden_states = self.ln1(hidden_states)
         # attention
-        hidden_states = self.self_attn(hidden_states)
+        hidden_states,_ = self.self_attn(hidden_states)
         # add connection
         hidden_states = residual + hidden_states
         # store again
@@ -149,7 +149,7 @@ class SiglipEncoderLayer(nn.Module):
 
 
 class SiglipMLP(nn.Module):
-    def __init__(self, config: SiglipVisionConfig):
+    def __init__(self, config):
         super().__init__()
         self.config = config
         self.linearlayer1 = nn.Linear(config.hidden_size, config.intermediate_size)
@@ -166,7 +166,7 @@ class SiglipMLP(nn.Module):
 class SiglipAttention(
     nn.Module
 ):  # will not contain causal masking as vision doesn't need to be autoregressive
-    def __init__(self, config: SiglipVisionConfig):
+    def __init__(self, config):
         super().__init__()
         self.config = config
         self.num_heads = config.num_attention_heads
@@ -203,7 +203,7 @@ class SiglipAttention(
             batch_size, seq_len, self.num_heads, self.head_dim
         ).transpose(1, 2)
         # now calculate attention weights using the formula. attention_weights = [batch_size,num_heads,num_patches,num_patches]
-        attn_weights = torch.matmul(query, key.transpose(2, 3)) * self.scale
+        attn_weights = (torch.matmul(query, key.transpose(2, 3)) * self.scale)
         if attn_weights.size() != (batch_size, self.num_heads, seq_len, seq_len):
             raise ValueError(
                 f"Attention weights should be of size {(batch_size, self.num_heads, seq_len, seq_len)}, but is"
