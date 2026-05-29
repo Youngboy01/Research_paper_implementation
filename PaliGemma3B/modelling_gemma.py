@@ -4,7 +4,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from sigLip import SiglipVisionConfig, SiglipVisionModel
 from typing import Optional, Tuple, List
-from torch.nn import CrossEntropyLoss
 import math
 
 
