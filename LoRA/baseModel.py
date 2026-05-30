@@ -1,5 +1,5 @@
 import torch.nn as nn
-from .LoraModule import LoRALinear
+from LoraModule import LoRALinear
 
 
 class MLP(nn.Module):
@@ -10,6 +10,7 @@ class MLP(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, output_dim)
 
     def forward(self, x):
+        x = x.view(x.size(0), -1)
         out = self.fc1(x)
         out = self.relu(out)
         out = self.fc2(out)
@@ -24,8 +25,8 @@ class LoRAMLP(nn.Module):
         self.fc2 = LoRALinear(nn.Linear(hidden_dim, output_dim), rank, alpha)
 
     def forward(self, x):
+        x = x.view(x.size(0), -1)
         out = self.fc1(x)
         out = self.relu(out)
         out = self.fc2(out)
         return out
-
